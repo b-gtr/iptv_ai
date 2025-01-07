@@ -6,7 +6,13 @@ import re
 import vlc
 import time
 
-M3U_URL = "https://iptv-org.github.io/iptv/countries/tr.m3u"
+# Dictionary für die verfügbaren Sprachen und die zugehörige M3U-URL
+# (Basierend auf iptv-org/languages)
+LANGUAGE_PLAYLISTS = {
+    "de": "https://iptv-org.github.io/iptv/languages/deu.m3u",  # Deutsch
+    "en": "https://iptv-org.github.io/iptv/languages/eng.m3u",  # Englisch
+    "tr": "https://iptv-org.github.io/iptv/languages/tur.m3u",  # Türkisch
+}
 
 def fetch_m3u(url):
     """
@@ -20,11 +26,12 @@ def fetch_m3u(url):
 def parse_m3u(m3u_content):
     """
     Parst den Inhalt einer M3U-Datei (als String).
-    Gibt eine Liste von Sendern zurück, 
+    Gibt eine Liste von Sendern zurück,
     wobei jeder Sender ein Dictionary mit Name und URL ist:
+    
     [
       {
-        'name': 'TRT 1',
+        'name': 'Kanalname',
         'url': 'http://.../some_stream.m3u8'
       },
       ...
@@ -33,10 +40,9 @@ def parse_m3u(m3u_content):
     channels = []
     
     # Wir suchen Zeilen, die mit #EXTINF beginnen (enthält Kanalname etc.)
-    # und danach direkt eine Zeile mit der URL
-    # Beispiel:
-    # #EXTINF:-1 tvg-id="..." tvg-name="TRT 1" ... ,TRT 1
-    # http://some_stream_url.m3u8
+    # und danach direkt eine Zeile mit der URL:
+    #  #EXTINF:-1 tvg-id="..." tvg-name="..." ... ,Kanalname
+    #  http://some_stream_url.m3u8
     pattern = r'#EXTINF.*?,(.*?)\n(http.*?)(?:\n|$)'
     matches = re.findall(pattern, m3u_content, flags=re.MULTILINE)
     
@@ -49,26 +55,6 @@ def parse_m3u(m3u_content):
         })
     
     return channels
-
-def select_channels(channels, filter_list=None):
-    """
-    Filtert die Kanal-Liste optional nach bestimmten Sendernamen,
-    wenn `filter_list` angegeben ist.
-    Beispiel: filter_list = ["ATV", "TRT 1", "Kanal 7"]
-    Gibt die gefilterte Liste zurück oder alles, wenn `filter_list` = None.
-    """
-    if not filter_list:
-        return channels
-    
-    filtered = []
-    for ch in channels:
-        # Wir suchen exakte Matches oder einfache 'in'-Matches,
-        # je nachdem, wie du filtern möchtest.
-        for f in filter_list:
-            if f.lower() in ch['name'].lower():
-                filtered.append(ch)
-                break
-    return filtered
 
 def play_stream(stream_url):
     """
@@ -84,8 +70,7 @@ def play_stream(stream_url):
 
     try:
         while True:
-            state = player.get_state()
-            # Optional: Statusausgabe oder Fehlermanagement
+            # Optional: Status ermitteln, Fehlerbehandlung etc.
             time.sleep(1)
     except KeyboardInterrupt:
         print("Wiedergabe wird beendet...")
@@ -93,43 +78,63 @@ def play_stream(stream_url):
         player.stop()
 
 def main():
-    print("IPTV-Player mit Daten von iptv-org (Land: Türkei)")
-    print("Lade M3U-Liste...")
-
+    # 1) Sprache auswählen
+    print("Verfügbare Sprachen:")
+    print("1. Deutsch (de)")
+    print("2. Englisch (en)")
+    print("3. Türkisch (tr)")
+    choice_lang = input("\nBitte wähle eine Sprache (Zahl eingeben): ")
+    
+    if choice_lang == "1":
+        selected_lang = "de"
+    elif choice_lang == "2":
+        selected_lang = "en"
+    elif choice_lang == "3":
+        selected_lang = "tr"
+    else:
+        print("Ungültige Auswahl. Programm wird beendet.")
+        return
+    
+    # 2) M3U für die gewählte Sprache laden
+    m3u_url = LANGUAGE_PLAYLISTS.get(selected_lang)
+    if not m3u_url:
+        print("Keine passende M3U-URL für diese Sprache gefunden.")
+        return
+    
+    print(f"\nLade M3U-Liste für Sprache '{selected_lang}'...")
     try:
-        m3u_data = fetch_m3u(M3U_URL)
+        m3u_data = fetch_m3u(m3u_url)
     except Exception as e:
         print(f"Fehler beim Laden der M3U-Datei: {e}")
         return
 
+    # 3) Kanalliste parsen
     print("Parsing der M3U-Liste...")
-    all_channels = parse_m3u(m3u_data)
-    print(f"Anzahl gefundener Sender: {len(all_channels)}")
+    channels = parse_m3u(m3u_data)
+    print(f"Anzahl gefundener Sender: {len(channels)}")
 
-    # Optionale Filter-Liste (nur bestimmte Sender anzeigen)
-    desired_channels = ["atv", "TRT 1", "Kanal 7"]  # Beispiel
-    filtered_channels = select_channels(all_channels, desired_channels)
-
-    if not filtered_channels:
-        print("Keine passenden Sender gefunden.")
+    if not channels:
+        print("Keine Sender gefunden. Programm wird beendet.")
         return
 
-    # Sender-Auswahl anzeigen
-    print("\nGefundene Sender:")
-    for idx, ch in enumerate(filtered_channels, 1):
+    # 4) Kanäle auflisten
+    print("\nVerfügbare Sender:")
+    for idx, ch in enumerate(channels, start=1):
         print(f"{idx}. {ch['name']}")
 
-    choice = input("\nBitte wähle einen Sender (Zahl eingeben): ")
+    # 5) Sender auswählen
+    choice_channel = input("\nBitte wähle einen Sender (Zahl eingeben): ")
     try:
-        choice = int(choice)
-        if 1 <= choice <= len(filtered_channels):
-            chosen_channel = filtered_channels[choice - 1]
-            print(f"Du hast gewählt: {chosen_channel['name']}")
+        choice_channel = int(choice_channel)
+        if 1 <= choice_channel <= len(channels):
+            chosen_channel = channels[choice_channel - 1]
+            print(f"\nDu hast gewählt: {chosen_channel['name']}")
+            print("Starte Wiedergabe...\n")
             play_stream(chosen_channel['url'])
         else:
-            print("Ungültige Auswahl.")
+            print("Ungültige Auswahl. Programm wird beendet.")
     except ValueError:
-        print("Bitte eine gültige Zahl eingeben.")
+        print("Bitte eine gültige Zahl eingeben. Programm wird beendet.")
 
 if __name__ == "__main__":
     main()
